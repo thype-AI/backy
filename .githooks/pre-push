@@ -1,0 +1,6 @@
+#!/bin/sh
+# Enable with: git config core.hooksPath .githooks
+# The suite starts real containers, so this push is not instant. --no-verify skips it.
+set -e
+uv run pyrefly check
+uv run pytest
