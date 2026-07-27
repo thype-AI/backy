@@ -2,7 +2,10 @@ services:
   backy:
     build: .
     env_file: .env
-    restart: "no" # run to completion; exit 0 = uploaded, 1 = failed, 2 = misconfigured
+    # Idle so Coolify's Scheduled Task can `docker exec` the actual run:
+    #   uv run --no-sync python -m backy
+    entrypoint: ["sleep", "infinity"]
+    restart: unless-stopped
     volumes:
       # Root-equivalent access to the host. This is the cost of the docker-exec approach,
       # and what buys you no database credentials over the network and no version-matched
