@@ -1,0 +1,15 @@
+services:
+  backy:
+    build: .
+    env_file: .env
+    restart: "no" # run to completion; exit 0 = uploaded, 1 = failed, 2 = misconfigured
+    volumes:
+      # Root-equivalent access to the host. This is the cost of the docker-exec approach,
+      # and what buys you no database credentials over the network and no version-matched
+      # pg_dump in the backy image.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Debounce state (NOTIFY_STATE_FILE) -- without this, failure alerts repeat every run.
+      - backy-state:/state
+volumes:
+  postgres-data:
+  backy-state:
