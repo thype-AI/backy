@@ -122,6 +122,34 @@ def test_resend_notifier_posts_an_email(
     ]
 
 
+def test_failure_debounce_persists_and_clears(
+    clean_env: Callable[..., None], tmp_path: Path
+) -> None:
+    """Repeat failures within the window send once; a success re-arms the alert."""
+    with _webhook_server() as (url, received):
+        clean_env(
+            DB_CONTAINER_LABEL=LABEL_SELECTOR,
+            DB_NAME=DB_NAME,
+            DB_USER=DB_USER,
+            AZURE_STORAGE_CONTAINER="backups",
+            AZURE_STORAGE_ACCOUNT="acct",
+            NOTIFY_CHANNELS="webhook",
+            WEBHOOK_URL=url,
+            NOTIFY_DEBOUNCE_MINUTES=60,
+            NOTIFY_STATE_FILE=tmp_path / "notify-state.json",
+        )
+        settings = Settings()  # pyrefly: ignore  # values come from the environment
+
+        notify.notify_all(settings, "Backup FAILED: app", "boom", debounce_key="failure")
+        # A fresh Settings instance == a fresh container: state must come from the file.
+        notify.notify_all(settings, "Backup FAILED: app", "boom", debounce_key="failure")
+        assert len(received) == 1, "second failure within the window must be suppressed"
+
+        notify.clear_debounce(settings, "failure")
+        notify.notify_all(settings, "Backup FAILED: app", "boom", debounce_key="failure")
+        assert len(received) == 2, "after a success clears the state, alert again"
+
+
 def test_broken_notifier_does_not_mask_the_failure(
     backup_env: Callable[..., None],
 ) -> None:

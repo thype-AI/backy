@@ -1,5 +1,6 @@
 """All configuration, validated at startup so a misconfigured container fails loudly."""
 
+from pathlib import Path
 from typing import Annotated, Literal, Self
 
 from pydantic import Field, field_validator, model_validator
@@ -33,6 +34,10 @@ class Settings(BaseSettings):
     # --- notifications ---
     notify_channels: Annotated[list[NotifyChannel], NoDecode] = []
     notify_on_success: bool = False
+    # After one failure alert, stay quiet for this many minutes. 0 disables. State lives
+    # in notify_state_file -- mount a volume there or the debounce resets every run.
+    notify_debounce_minutes: int = 0
+    notify_state_file: Path = Path("/state/notify-state.json")
     webhook_url: str | None = None
     slack_webhook_url: str | None = None
     smtp_host: str | None = None

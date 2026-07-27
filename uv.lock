@@ -78,6 +78,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pydantic-settings" },
+    { name = "types-docker" },
 ]
 
 [package.dev-dependencies]
@@ -95,6 +96,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28" },
     { name = "pydantic", specifier = ">=2.13.4" },
     { name = "pydantic-settings", specifier = ">=2.14.2" },
+    { name = "types-docker", specifier = ">=7.2.0.20260724" },
 ]
 
 [package.metadata.requires-dev]
@@ -581,6 +583,44 @@ wheels = [
 [package.optional-dependencies]
 azurite = [
     { name = "azure-storage-blob" },
+]
+
+[[package]]
+name = "types-docker"
+version = "7.2.0.20260724"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "types-paramiko" },
+    { name = "types-requests" },
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/3a/60/d87ba2c61c566aca8186d38986e65688918b1efa3ed509155ff9015694b6/types_docker-7.2.0.20260724.tar.gz", hash = "sha256:adc0fef7f9eed6dd83394b76828e514dbd427afece0d6a5498e9a3a398436705", size = 36358, upload-time = "2026-07-24T05:00:27.984Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/a2/16/d8ec05a2e8924e57cb1a400e21115cbb62822ad622fd41dc4f8683199e40/types_docker-7.2.0.20260724-py3-none-any.whl", hash = "sha256:9ab8a6c08861e02bafc9225b9ac385e3b9c094289373b0be37f5ab530fb07fd3", size = 51100, upload-time = "2026-07-24T05:00:26.917Z" },
+]
+
+[[package]]
+name = "types-paramiko"
+version = "5.0.0.20260724"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "cryptography" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/66/c2/445549ed6f0944352f2b91d88d16bbdc3993a4d6dbbedb81c557b3cad85a/types_paramiko-5.0.0.20260724.tar.gz", hash = "sha256:37e7f3f2196cf187c89649ad836621c675bc318369d80fa78051507a4ae770c9", size = 28548, upload-time = "2026-07-24T04:59:59.889Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/4c/16/fca52784f979821e2205ff514322d0e83452536acc4807a79ddb2085bbb2/types_paramiko-5.0.0.20260724-py3-none-any.whl", hash = "sha256:40c7083803a5a28ab7a8d2fe4cd9b7746d0a03538598582ce68f60967a2ad272", size = 37125, upload-time = "2026-07-24T04:59:58.955Z" },
+]
+
+[[package]]
+name = "types-requests"
+version = "2.33.0.20260712"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "urllib3" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/db/51/703318f7b7be8bee126ec13bf615050f932d0179b8784420f3a0199cc769/types_requests-2.33.0.20260712.tar.gz", hash = "sha256:2141b67ab534a5c5cd2dac5034f2a35f42e699c5bf185eee608c5246a069d7fb", size = 25084, upload-time = "2026-07-12T05:14:20.455Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/62/e7/010c87f559e216d83f9dc51e939633fd0d0ead3377340181ab0e223cd3b5/types_requests-2.33.0.20260712-py3-none-any.whl", hash = "sha256:de027e28c171d3da529689cbfa023b0b4eab188c8dfa22fd834eebd2cee6e7bb", size = 21392, upload-time = "2026-07-12T05:14:19.616Z" },
 ]
 
 [[package]]

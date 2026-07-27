@@ -27,8 +27,11 @@ services:
       # and what buys you no database credentials over the network and no version-matched
       # pg_dump in the backy image.
       - /var/run/docker.sock:/var/run/docker.sock
+      # Debounce state (NOTIFY_STATE_FILE) -- without this, failure alerts repeat every run.
+      - backy-state:/state
     depends_on:
       - postgres
 
 volumes:
   postgres-data:
+  backy-state:

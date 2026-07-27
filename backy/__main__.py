@@ -14,7 +14,7 @@ from pydantic import ValidationError
 
 from backy.config import Settings
 from backy.dump import blob_name, dump_database
-from backy.notify import notify_all
+from backy.notify import clear_debounce, notify_all
 from backy.storage import get_storage
 
 log = logging.getLogger("backy")
@@ -55,10 +55,12 @@ def main() -> int:
             settings,
             f"Backup FAILED: {settings.db_name}",
             f"{type(error).__name__}: {error}\n\n{traceback.format_exc()}",
+            debounce_key="failure",
         )
         return EXIT_FAILED
 
     log.info("backup complete: %s", url)
+    clear_debounce(settings, "failure")  # a fresh outage after a success alerts immediately
     # ponytail: failure-only notification is silent if this container never starts or dies
     # before reaching the handler above -- no process, no notification. NOTIFY_ON_SUCCESS is
     # the poor man's cover. Upgrade path: ping healthchecks.io or an Uptime Kuma push
