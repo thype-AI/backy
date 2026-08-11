@@ -19,21 +19,22 @@ RESEND_URL = "https://api.resend.com/emails"
 
 
 class Notifier(Protocol):
-    def __call__(self, settings: Settings, subject: str, body: str) -> None: ...
+    def __call__(self, settings: Settings, database: str, subject: str, body: str) -> None: ...
 
 
-def _webhook(settings: Settings, subject: str, body: str) -> None:
+def _webhook(settings: Settings, database: str, subject: str, body: str) -> None:
     """Generic JSON POST. Also covers Coolify, Discord, Teams and ntfy via the URL alone."""
     assert settings.webhook_url  # guaranteed by Settings validation
     response = httpx.post(
         settings.webhook_url,
-        json={"subject": subject, "body": body, "database": settings.db_name},
+        json={"subject": subject, "body": body, "database": database},
         timeout=TIMEOUT_SECONDS,
     )
     response.raise_for_status()
 
 
-def _slack(settings: Settings, subject: str, body: str) -> None:
+def _slack(settings: Settings, database: str, subject: str, body: str) -> None:
+    del database  # the name is already in the subject
     assert settings.slack_webhook_url
     response = httpx.post(
         settings.slack_webhook_url,
@@ -43,7 +44,8 @@ def _slack(settings: Settings, subject: str, body: str) -> None:
     response.raise_for_status()
 
 
-def _smtp(settings: Settings, subject: str, body: str) -> None:
+def _smtp(settings: Settings, database: str, subject: str, body: str) -> None:
+    del database  # the name is already in the subject
     assert settings.smtp_host and settings.smtp_from and settings.smtp_to
     message = EmailMessage()
     message["Subject"] = subject
@@ -59,8 +61,9 @@ def _smtp(settings: Settings, subject: str, body: str) -> None:
         server.send_message(message)
 
 
-def _resend(settings: Settings, subject: str, body: str) -> None:
+def _resend(settings: Settings, database: str, subject: str, body: str) -> None:
     """Resend's HTTP API -- SMTP without an SMTP server."""
+    del database  # the name is already in the subject
     assert settings.resend_api_key and settings.resend_from and settings.resend_to
     response = httpx.post(
         RESEND_URL,
@@ -122,7 +125,11 @@ def clear_debounce(settings: Settings, key: str) -> None:
 
 
 def notify_all(
-    settings: Settings, subject: str, body: str, debounce_key: str | None = None
+    settings: Settings,
+    database: str,
+    subject: str,
+    body: str,
+    debounce_key: str | None = None,
 ) -> None:
     """Send to every configured channel. Never raises.
 
@@ -142,7 +149,7 @@ def notify_all(
         _write_state(settings.notify_state_file, state)
     for channel in settings.notify_channels:
         try:
-            NOTIFIERS[channel](settings, subject, body)
+            NOTIFIERS[channel](settings, database, subject, body)
             log.info("notified via %s", channel)
         except Exception:
             # A broken notifier must never replace the failure it was sent to report.

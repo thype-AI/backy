@@ -11,4 +11,6 @@ wheels/
 
 # Secrets: DB and SMTP passwords, Azure connection strings
 .env
+# May hold database passwords; databases.example.json is the committed template.
+databases.json
 

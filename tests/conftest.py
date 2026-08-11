@@ -4,7 +4,9 @@ Tests run on the host against the host docker socket, so backy sees the testcont
 postgres exactly the way the deployed sidecar sees its sibling container.
 """
 
+import json
 from collections.abc import Callable, Iterator
+from pathlib import Path
 from uuid import uuid4
 
 import docker
@@ -28,6 +30,19 @@ DB_USER = "backy"
 DB_PASSWORD = "s3cret"
 SEED_TABLE = "widgets"
 SEED_ROWS = 25
+# Always present in a postgres container, so a second backup target costs no fixture.
+OTHER_DB_NAME = "postgres"
+
+
+def database_entry(**overrides: object) -> dict[str, object]:
+    """One entry for databases.json, pointing at the fixture container."""
+    return {
+        "name": DB_NAME,
+        "user": DB_USER,
+        "password": DB_PASSWORD,
+        "container_label": LABEL_SELECTOR,
+        **overrides,
+    }
 
 
 @pytest.fixture(scope="session")
@@ -90,12 +105,25 @@ def azurite_connection_string() -> Iterator[str]:
 
 
 @pytest.fixture
-def blob_container(azurite_connection_string: str) -> Iterator[ContainerClient]:
-    """A fresh blob container per test, so 'nothing was uploaded' assertions are exact."""
+def new_blob_container(azurite_connection_string: str) -> Iterator[Callable[[], ContainerClient]]:
+    """Make blob containers on demand -- a per-database storage override needs two."""
     service = BlobServiceClient.from_connection_string(azurite_connection_string)
-    client = service.create_container(f"backups-{uuid4().hex[:8]}")
-    yield client
-    client.delete_container()
+    created: list[ContainerClient] = []
+
+    def make() -> ContainerClient:
+        client = service.create_container(f"backups-{uuid4().hex[:8]}")
+        created.append(client)
+        return client
+
+    yield make
+    for client in created:
+        client.delete_container()
+
+
+@pytest.fixture
+def blob_container(new_blob_container: Callable[[], ContainerClient]) -> ContainerClient:
+    """A fresh blob container per test, so 'nothing was uploaded' assertions are exact."""
+    return new_blob_container()
 
 
 @pytest.fixture
@@ -121,17 +149,20 @@ def backup_env(
     postgres_container: Container,
     azurite_connection_string: str,
     blob_container: ContainerClient,
+    tmp_path: Path,
 ) -> Callable[..., None]:
-    """Apply a complete working configuration, with per-test overrides."""
+    """Apply a complete working configuration: a databases file plus the env settings.
 
-    def apply(**overrides: object) -> None:
+    Pass `databases` to describe the targets, anything else to override an env setting.
+    """
+
+    def apply(databases: list[dict[str, object]] | None = None, **overrides: object) -> None:
+        # Absolute path: clean_env chdirs, and DATABASES_FILE is not relative to cwd.
+        databases_file = tmp_path / "databases.json"
+        databases_file.write_text(json.dumps(databases or [database_entry()]))
         clean_env(
             **{
-                "DB_ENGINE": "postgres",
-                "DB_CONTAINER_LABEL": LABEL_SELECTOR,
-                "DB_NAME": DB_NAME,
-                "DB_USER": DB_USER,
-                "DB_PASSWORD": DB_PASSWORD,
+                "DATABASES_FILE": databases_file,
                 "STORAGE_BACKEND": "azure",
                 "AZURE_STORAGE_CONTAINER": blob_container.container_name,
                 "AZURE_STORAGE_CONNECTION_STRING": azurite_connection_string,

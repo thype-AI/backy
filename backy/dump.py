@@ -15,7 +15,7 @@ from docker.models.containers import Container
 from pydantic import BaseModel, ConfigDict
 
 from backy import BackupError
-from backy.config import DbEngine, Settings
+from backy.config import Database, DbEngine, Settings
 
 log = logging.getLogger(__name__)
 
@@ -27,25 +27,25 @@ class DumpSpec(BaseModel):
 
     model_config = ConfigDict(frozen=True)
 
-    build_command: Callable[[Settings], list[str]]
+    build_command: Callable[[Database], list[str]]
     extension: str
-    build_env: Callable[[Settings], dict[str, str]]
+    build_env: Callable[[Database], dict[str, str]]
 
 
 DUMP_SPECS: dict[DbEngine, DumpSpec] = {
     "postgres": DumpSpec(
         # --format=custom is compressed by pg_dump itself and restores with pg_restore,
         # so there is no compression code here.
-        build_command=lambda s: [
+        build_command=lambda db: [
             "pg_dump",
             "--format=custom",
             "--username",
-            s.db_user,
+            db.user,
             "--dbname",
-            s.db_name,
+            db.name,
         ],
         extension="dump",
-        build_env=lambda s: {"PGPASSWORD": s.db_password} if s.db_password else {},
+        build_env=lambda db: {"PGPASSWORD": db.password} if db.password else {},
     ),
 }
 
@@ -143,18 +143,18 @@ def exec_capture(
     return bytes(captured)
 
 
-def dump_database(settings: Settings, dest_dir: Path) -> Path:
-    """Dump the configured database into dest_dir and return the file written."""
-    spec = DUMP_SPECS[settings.db_engine]
+def dump_database(settings: Settings, database: Database, dest_dir: Path) -> Path:
+    """Dump one database into dest_dir and return the file written."""
+    spec = DUMP_SPECS[database.engine]
     timestamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
-    dest = dest_dir / f"{settings.db_name}-{timestamp}.{spec.extension}"
+    dest = dest_dir / f"{database.name}-{timestamp}.{spec.extension}"
 
     client = get_client(settings)
     try:
-        container = find_container(client, settings.db_container_label)
-        log.info("dumping %r from container %s", settings.db_name, container.name)
+        container = find_container(client, database.container_label)
+        log.info("dumping %r from container %s", database.name, container.name)
         exec_to_file(
-            client, container, spec.build_command(settings), dest, spec.build_env(settings)
+            client, container, spec.build_command(database), dest, spec.build_env(database)
         )
     finally:
         client.close()
@@ -163,12 +163,12 @@ def dump_database(settings: Settings, dest_dir: Path) -> Path:
     if size == 0:
         # pg_dump can exit 0 having written nothing if it is pointed somewhere strange.
         # An empty backup that uploads cleanly is the worst outcome available.
-        raise BackupError(f"dump of {settings.db_name!r} is empty")
+        raise BackupError(f"dump of {database.name!r} is empty")
     log.info("dumped %s bytes to %s", size, dest.name)
     return dest
 
 
-def blob_name(settings: Settings, dump_path: Path) -> str:
-    """db_name/ prefix so one storage container can hold several databases,
+def blob_name(database: Database, dump_path: Path) -> str:
+    """name/ prefix so one storage container can hold several databases,
     and so Azure lifecycle rules can target them individually."""
-    return f"{settings.db_name}/{dump_path.name}"
+    return f"{database.name}/{dump_path.name}"

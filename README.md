@@ -1,13 +1,14 @@
 # backy
 
-A backup sidecar. It runs in its own container, dumps a database out of a **sibling**
-container, uploads the dump to blob storage, and tells you when that fails.
+A backup sidecar. It runs in its own container, dumps one or more databases out of
+**sibling** containers, uploads each dump to blob storage, and tells you when that fails.
 
-One run, one exit code. `0` uploaded, `1` failed, `2` misconfigured.
+One run, one exit code. `0` all uploaded, `1` at least one failed, `2` misconfigured.
+A database that fails does not stop the rest of the list.
 
 ```
 backy/
-  config.py    Settings — every knob, validated at startup
+  config.py    Settings + the databases file — every knob, validated at startup
   dump.py      docker exec streaming dump + the engine registry
   storage.py   StorageBackend protocol + Azure Blob
   notify.py    webhook / Slack / SMTP / Resend + fan-out
@@ -28,8 +29,8 @@ stdout back over the socket. Two consequences worth knowing:
 
 The container to dump is chosen by **label selector**, not name or id:
 
-```
-DB_CONTAINER_LABEL=com.docker.compose.service=postgres
+```json
+"container_label": "com.docker.compose.service=postgres"
 ```
 
 Names survive restarts but not recreates, and ids survive neither — a Coolify redeploy
@@ -37,15 +38,49 @@ changes both. Compose and Coolify re-apply their service labels every time, so a
 the only identifier that holds. backy requires the selector to match **exactly one**
 running container and fails otherwise, rather than dumping an arbitrary match.
 
-## Setup
+## Configuration
+
+Two files. `.env` holds the settings shared by every backup — storage, notifications,
+logging. `databases.json` holds the list of databases, and is **mounted into the container**
+at `/config/databases.json` (override with `DATABASES_FILE`):
+
+```json
+[
+  {
+    "name": "app",
+    "user": "app",
+    "container_label": "com.docker.compose.service=postgres"
+  },
+  {
+    "name": "analytics",
+    "user": "analytics",
+    "container_label": "com.docker.compose.service=analytics-db",
+    "overrides": {
+      "azure_storage_container": "analytics-backups",
+      "notify_channels": ["slack"],
+      "slack_webhook_url": "https://hooks.slack.com/services/..."
+    }
+  }
+]
+```
+
+`password` is usually unnecessary — `pg_dump` runs inside the database container over the
+unix socket, which the official postgres image trusts. `engine` defaults to `postgres`.
+
+`overrides` is optional and may set **any** storage or notification setting from `.env` for
+that database alone; anything left out is inherited from the environment. The merged result
+is validated per database at startup, so an override that names a notification channel
+without its URL exits `2` before the first dump runs — as does an unknown key, a duplicate
+`name`, an empty list, or a file that is not mounted.
 
 ```bash
-cp .env.example .env      # then fill it in
+cp .env.example .env                          # shared settings
+cp databases.example.json databases.json      # the list of databases
 docker build -t backy .
 ```
 
 The Azure storage container must already exist; backy does not create it, so it needs no
-container-create permission.
+container-create permission. `databases.json` is gitignored — it can hold passwords.
 
 ## Scheduling
 
@@ -62,13 +97,14 @@ See `compose.example.yml`.
 
 Not backy's job. Azure Blob Storage does it natively and for free: add a **lifecycle
 management** rule on the storage container, e.g. delete blobs older than 30 days, filtered
-on the `<db_name>/` prefix. Blobs are named `<db_name>/<db_name>-<UTC timestamp>.dump`
-precisely so those rules can target one database at a time.
+on the `<name>/` prefix. Blobs are named `<name>/<name>-<UTC timestamp>.dump` precisely so
+those rules can target one database at a time, and so one storage container holds them all.
 
 ## Notifications
 
 Set `NOTIFY_CHANNELS` to any comma-separated mix of `webhook`, `slack`, `smtp`, `resend`. Every
-configured channel gets a copy; a channel that errors is logged and skipped, so a broken
+configured channel gets a copy, once per failed database (each debounced on its own, so one
+permanently broken database cannot silence the first alert for another); a channel that errors is logged and skipped, so a broken
 notifier can never swallow the failure it was sent to report.
 
 `webhook` is a plain JSON POST, which also covers Coolify, Discord, Teams and ntfy — the
@@ -79,6 +115,16 @@ Email is paid and needs a verified domain, and Azure Monitor alerting would mean
 logs into Log Analytics first. So `smtp` means bring your own (Gmail app password, …), and
 a webhook is the cheaper default. `resend` is the same email over Resend's HTTP API instead
 — an API key and a verified sending domain, no SMTP server to reach.
+
+Check your channels without touching a database:
+
+```bash
+docker compose run --rm backy --test-notify           # one-shot container
+docker compose exec backy uv run --no-sync python -m backy --test-notify   # Coolify/idling
+```
+
+It sends one test message per database through that database's own channels — the exact
+path a real failure takes, overrides included — and dumps nothing.
 
 **Known gap:** notification happens *inside* the process, so if the container never starts
 or dies before the handler runs, nothing is sent. `NOTIFY_ON_SUCCESS=true` is the cheap
@@ -95,14 +141,14 @@ import if you do one without the other.
 ```python
 # dump.py — MySQL
 DUMP_SPECS["mysql"] = DumpSpec(
-    build_command=lambda s: ["mysqldump", "-u", s.db_user, s.db_name],
+    build_command=lambda db: ["mysqldump", "-u", db.user, db.name],
     extension="sql",
-    build_env=lambda s: {"MYSQL_PWD": s.db_password} if s.db_password else {},
+    build_env=lambda db: {"MYSQL_PWD": db.password} if db.password else {},
 )
 ```
 
 `storage.py` wants a class with `upload(path, name) -> str` registered in
-`STORAGE_BACKENDS`; `notify.py` wants a `(settings, subject, body) -> None` function in
+`STORAGE_BACKENDS`; `notify.py` wants a `(settings, database, subject, body) -> None` function in
 `NOTIFIERS`.
 
 ## Tests
@@ -115,8 +161,9 @@ Real containers, no mocks: testcontainers starts a labelled `postgres:17-alpine`
 Azurite blob emulator, and the suite calls the same `main()` the sidecar runs. The headline
 test dumps, uploads, downloads, `pg_restore`s into a fresh database and asserts the row
 count survived — the only assertion that actually proves a dump is complete rather than
-truncated. Others prove that a failed `pg_dump` uploads **nothing**, and that a failure
-reaches a live HTTP webhook listener.
+truncated. Others prove that a failed `pg_dump` uploads **nothing**, that a failure reaches
+a live HTTP webhook listener, and that one broken database in the list neither skips the
+others nor loses its own alert.
 
 First run pulls images and takes a few minutes; after that the suite is ~30s.
 

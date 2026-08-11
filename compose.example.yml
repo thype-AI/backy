@@ -1,7 +1,8 @@
 # backy runs once and exits, so scheduling lives outside the container.
 #
-#   docker compose run --rm backy          # one backup, now
+#   docker compose run --rm backy          # back up every database in databases.json, now
 #   0 3 * * *  docker compose run --rm backy    # host cron
+#   docker compose run --rm backy --test-notify   # check the alert channels only
 #
 # On Coolify: add a Scheduled Task on this service with the cron expression you want.
 
@@ -15,14 +16,16 @@ services:
     volumes:
       - postgres-data:/var/lib/postgresql/data
     # Compose applies com.docker.compose.service=postgres automatically -- that is the
-    # label DB_CONTAINER_LABEL selects on. It survives restarts *and* redeploys, unlike
-    # the container name or id.
+    # label a databases.json entry's container_label selects on. It survives restarts
+    # *and* redeploys, unlike the container name or id.
 
   backy:
     build: .
     env_file: .env
     restart: "no" # run to completion; exit 0 = uploaded, 1 = failed, 2 = misconfigured
     volumes:
+      # The databases to back up. Read-only: backy never writes it.
+      - ./databases.json:/config/databases.json:ro
       # Root-equivalent access to the host. This is the cost of the docker-exec approach,
       # and what buys you no database credentials over the network and no version-matched
       # pg_dump in the backy image.

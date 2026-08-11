@@ -1,0 +1,19 @@
+[
+  {
+    "name": "app",
+    "user": "app",
+    "container_label": "com.docker.compose.service=postgres"
+  },
+  {
+    "name": "analytics",
+    "user": "analytics",
+    "container_label": "com.docker.compose.service=analytics-db",
+    "engine": "postgres",
+    "password": "only-if-pg_hba-needs-one",
+    "overrides": {
+      "azure_storage_container": "analytics-backups",
+      "notify_channels": ["slack"],
+      "slack_webhook_url": "https://hooks.slack.com/services/..."
+    }
+  }
+]
