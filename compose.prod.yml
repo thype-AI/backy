@@ -7,6 +7,13 @@ services:
     # Add --test-notify to that command to check the alert channels instead.
     entrypoint: ["sleep", "infinity"]
     restart: unless-stopped
+    # The container just sleeps, so the only thing worth checking is what the scheduled
+    # run needs: a reachable docker socket.
+    healthcheck:
+      test: ["CMD", "uv", "run", "--no-sync", "python", "-c", "import docker; docker.from_env().ping()"]
+      interval: 1m
+      timeout: 10s
+      retries: 3
     volumes:
       # The databases to back up. Read-only: backy never writes it.
       # Coolify: skip this mount and paste the same JSON into a DATABASES_JSON env var
