@@ -54,6 +54,9 @@ class Settings(BackupSettings, BaseSettings):
 
     # The mounted JSON list of databases to back up. See databases.example.json.
     databases_file: Path = Path("/config/databases.json")
+    # Same JSON, pasted inline instead of mounted. Wins over databases_file when set --
+    # for hosts (Coolify) whose compose file mounts cannot carry content.
+    databases_json: str | None = None
 
     # --- notifications, global only: state and debounce are per-container, not per-db ---
     # After one failure alert, stay quiet for this many minutes. 0 disables. State lives
@@ -147,7 +150,9 @@ _DATABASES = TypeAdapter(Annotated[list[Database], Field(min_length=1)])
 
 
 def load_databases(settings: Settings) -> list[Database]:
-    """Parse the mounted databases file. Raises ValueError, so a bad file exits 2, not 1."""
+    """Parse the databases config. Raises ValueError, so a bad file exits 2, not 1."""
+    if settings.databases_json:
+        return _validate(settings.databases_json.encode(), "DATABASES_JSON")
     try:
         raw = settings.databases_file.read_bytes()
     except OSError as error:
@@ -156,11 +161,15 @@ def load_databases(settings: Settings) -> list[Database]:
             f"file there, or point DATABASES_FILE somewhere else"
         ) from error
 
+    return _validate(raw, str(settings.databases_file))
+
+
+def _validate(raw: bytes, source: str) -> list[Database]:
     databases = _DATABASES.validate_json(raw)
     names = [database.name for database in databases]
     if len(set(names)) != len(names):
         # They would share a blob prefix, so their backups interleave under one folder.
-        raise ValueError(f"duplicate database names in {settings.databases_file}: {names}")
+        raise ValueError(f"duplicate database names in {source}: {names}")
     return databases
 
 
